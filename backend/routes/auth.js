@@ -20,7 +20,7 @@ if(existing){
 const password_hash =bcrypt.hashSync(password,10);
 const mahalleClean = normalizeMahalle(mahalle);
 const result = db.prepare(
-    'INSERT INTO businesses (name, email, password_hash,mahalleClean) VALUES (?, ?, ?,?)'
+    'INSERT INTO businesses (name, email, password_hash,mahalle) VALUES (?, ?, ?,?)'
 
 ).run(name, email, password_hash, mahalle);
 
@@ -29,7 +29,7 @@ const token =jwt.sign(
     JWT_SECRET,
     {expiresIn: '7d'}
 );
-res.status(201).json({ token,business: {id: result.lastInsertRowid, name, email, mahalleClean}});
+res.status(201).json({ token,business: {id: result.lastInsertRowid, name, email, mahalle:'mahalleClean'}});
 
 });
 
@@ -76,7 +76,7 @@ const token=jwt.sign(
     JWT_SECRET,
     {expiresIn: '7d'},
 );
-res.status(201).json({token,courier: {id: result.lastInsertRowid, name,email,mahalleClean,status:'musait'}});
+res.status(201).json({token,courier: {id: result.lastInsertRowid, name,email,mahalle:'mahalleClean',status:'musait'}});
 
 });
 //kurye giris

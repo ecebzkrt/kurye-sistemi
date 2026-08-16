@@ -43,7 +43,7 @@ const mahalleClean = normalizeMahalle(mahalle);
   const receiptPath = req.file ? `/uploads/${req.file.filename}` : null;
 
   const result = db.prepare(
-    `INSERT INTO orders (business_id, customer_name, customer_address, mahalleClean, receipt_image_path, status)
+    `INSERT INTO orders (business_id, customer_name, customer_address, mahalle, receipt_image_path, status)
      VALUES (?, ?, ?, ?, ?, 'bekliyor')`
   ).run(req.user.id, customer_name, customer_address, mahalle, receiptPath);
 
