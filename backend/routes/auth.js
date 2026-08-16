@@ -1,3 +1,4 @@
+const { normalizeMahalle } = require('../utils');
 const express =require('express');
 const bcrypt= require('bcryptjs');
 const jwt= require('jsonwebtoken');
@@ -17,8 +18,9 @@ if(existing){
 
 }
 const password_hash =bcrypt.hashSync(password,10);
+const mahalleClean = normalizeMahalle(mahalle);
 const result = db.prepare(
-    'INSERT INTO businesses (name, email, password_hash,mahalle) VALUES (?, ?, ?,?)'
+    'INSERT INTO businesses (name, email, password_hash,mahalleClean) VALUES (?, ?, ?,?)'
 
 ).run(name, email, password_hash, mahalle);
 
@@ -27,7 +29,7 @@ const token =jwt.sign(
     JWT_SECRET,
     {expiresIn: '7d'}
 );
-res.status(201).json({ token,business: {id: result.lastInsertRowid, name, email, mahalle}});
+res.status(201).json({ token,business: {id: result.lastInsertRowid, name, email, mahalleClean}});
 
 });
 
@@ -63,17 +65,18 @@ router.post('/courier/register',(req,res) =>{
         return res.status(409).json({error:'Bu email ile kayıtlı bir kurye zaten var.'});
     }
 const password_hash=bcrypt.hashSync(password,10);
+const mahalleClean = normalizeMahalle(mahalle);
 const result=db.prepare(
 
   'INSERT INTO couriers (name,email,password_hash,mahalle,status) VALUES (?,?,?,?,?)'
-).run(name,email,password_hash,mahalle,'musait');
+).run(name,email,password_hash,mahalleClean,'musait');
 
 const token=jwt.sign(
     { id: result.lastInsertRowid, role: 'courier',name},
     JWT_SECRET,
     {expiresIn: '7d'},
 );
-res.status(201).json({token,courier: {id: result.lastInsertRowid, name,email,mahalle,status:'musait'}});
+res.status(201).json({token,courier: {id: result.lastInsertRowid, name,email,mahalleClean,status:'musait'}});
 
 });
 //kurye giris

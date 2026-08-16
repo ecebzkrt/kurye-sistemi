@@ -1,3 +1,4 @@
+const { normalizeMahalle } = require('../utils');
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
@@ -33,6 +34,7 @@ const upload = multer({
 // SİPARİŞ OLUŞTUR (sadece işletme)
 router.post('/', requireAuth(['business']), upload.single('receipt'), (req, res) => {
   const { customer_name, customer_address, mahalle } = req.body;
+const mahalleClean = normalizeMahalle(mahalle);
 
   if (!customer_name || !customer_address || !mahalle) {
     return res.status(400).json({ error: 'Müşteri adı, adres ve mahalle zorunludur.' });
@@ -41,7 +43,7 @@ router.post('/', requireAuth(['business']), upload.single('receipt'), (req, res)
   const receiptPath = req.file ? `/uploads/${req.file.filename}` : null;
 
   const result = db.prepare(
-    `INSERT INTO orders (business_id, customer_name, customer_address, mahalle, receipt_image_path, status)
+    `INSERT INTO orders (business_id, customer_name, customer_address, mahalleClean, receipt_image_path, status)
      VALUES (?, ?, ?, ?, ?, 'bekliyor')`
   ).run(req.user.id, customer_name, customer_address, mahalle, receiptPath);
 

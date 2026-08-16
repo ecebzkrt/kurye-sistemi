@@ -16,7 +16,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Yüklenen fiş fotoğraflarına tarayıcıdan erişim
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
+app.use(express.static(path.join(__dirname, '..', 'public')));
 // API route'ları
 app.use('/api/auth', authRoutes);
 app.use('/api/orders', orderRoutes);
