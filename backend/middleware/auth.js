@@ -5,7 +5,7 @@ const JWT_SECRET =process.env.JWT_SECRET || 'gelistirme-ortami-gizli-anahtari';
 function requireAuth(allowedRoles){
 return (req,res,next) =>{
     const authHeader =req.headers['authorization'];
-    if(!authHeader || authHeader.startsWith('Bearer')){
+    if(!authHeader || !authHeader.startsWith('Bearer')){
         return res.status(401).json({error:'Token bulunamadı.Lütfen giriş yapın'});
     }
     const token = authHeader.split(' ')[1];
