@@ -1,11 +1,9 @@
-const { normalizeMahalle } = require('../utils');
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const db = require('../db');
 const { requireAuth } = require('../middleware/auth');
-const { tryAssignOrder, tryAssignPendingOrderToCourier } = require('../matching');
 
 const router = express.Router();
 
@@ -23,7 +21,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const okTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
     if (okTypes.includes(file.mimetype)) cb(null, true);
@@ -32,9 +30,9 @@ const upload = multer({
 });
 
 // SİPARİŞ OLUŞTUR (sadece işletme)
+// Artık otomatik atama YOK — sipariş direkt havuza düşer, müsait kuryeler görüp elle alır.
 router.post('/', requireAuth(['business']), upload.single('receipt'), (req, res) => {
   const { customer_name, customer_address, mahalle } = req.body;
-const mahalleClean = normalizeMahalle(mahalle);
 
   if (!customer_name || !customer_address || !mahalle) {
     return res.status(400).json({ error: 'Müşteri adı, adres ve mahalle zorunludur.' });
@@ -48,16 +46,11 @@ const mahalleClean = normalizeMahalle(mahalle);
   ).run(req.user.id, customer_name, customer_address, mahalle, receiptPath);
 
   const orderId = result.lastInsertRowid;
-  const assignedCourier = tryAssignOrder(orderId);
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
 
   res.status(201).json({
     order,
-    assigned: !!assignedCourier,
-    courier: assignedCourier ? { id: assignedCourier.id, name: assignedCourier.name } : null,
-    message: assignedCourier
-      ? `Sipariş oluşturuldu ve ${assignedCourier.name} adlı kuryeye atandı.`
-      : 'Sipariş oluşturuldu, şu an bu mahallede müsait kurye yok. Kurye müsait olunca otomatik atanacak.'
+    message: 'Sipariş oluşturuldu ve müsait kuryelere iletildi.'
   });
 });
 
@@ -77,7 +70,7 @@ router.get('/business/mine', requireAuth(['business']), (req, res) => {
 // KURYEYE ATANMIŞ SİPARİŞLER
 router.get('/courier/mine', requireAuth(['courier']), (req, res) => {
   const orders = db.prepare(
-    `SELECT o.*, b.name AS business_name
+    `SELECT o.*, b.name AS business_name, b.mahalle AS business_mahalle
      FROM orders o
      LEFT JOIN businesses b ON o.business_id = b.id
      WHERE o.courier_id = ?
@@ -87,18 +80,21 @@ router.get('/courier/mine', requireAuth(['courier']), (req, res) => {
   res.json({ orders });
 });
 
-// BEKLEYEN (HAVUZDAKİ) SİPARİŞLER — kuryenin mahallesindeki, kurye elle alabilsin diye
+// BEKLEYEN (HAVUZDAKİ) SİPARİŞLER — artık mahalle filtresi yok, TÜM bekleyen siparişler.
+// İşletme adı ve işletmenin mahallesi de dönüyor, kurye ona göre karar versin diye.
 router.get('/pending/mine', requireAuth(['courier']), (req, res) => {
-  const courier = db.prepare('SELECT * FROM couriers WHERE id = ?').get(req.user.id);
-
   const orders = db.prepare(
-    `SELECT * FROM orders WHERE mahalle = ? AND status = 'bekliyor' ORDER BY created_at ASC`
-  ).all(courier.mahalle);
+    `SELECT o.*, b.name AS business_name, b.mahalle AS business_mahalle
+     FROM orders o
+     LEFT JOIN businesses b ON o.business_id = b.id
+     WHERE o.status = 'bekliyor'
+     ORDER BY o.created_at ASC`
+  ).all();
 
   res.json({ orders });
 });
 
-// KURYE HAVUZDAN SİPARİŞ ALIR (manuel, atomik)
+// KURYE HAVUZDAN SİPARİŞ ALIR (manuel, atomik — çakışma koruması burada)
 router.post('/:id/claim', requireAuth(['courier']), (req, res) => {
   const orderId = req.params.id;
 
@@ -143,11 +139,31 @@ router.patch('/:id/status', requireAuth(['courier']), (req, res) => {
 
   if (status === 'teslim_edildi') {
     db.prepare(`UPDATE couriers SET status = 'musait' WHERE id = ?`).run(req.user.id);
-    tryAssignPendingOrderToCourier(req.user.id);
   }
 
   const updated = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
   res.json({ order: updated });
 });
+
+// SİPARİŞ İPTAL ETME (sadece işletme, sadece kendi siparişi, sadece henüz kurye almadıysa)
+router.patch('/:id/cancel', requireAuth(['business']), (req, res) => {
+  const orderId = req.params.id;
+
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+  if (!order) return res.status(404).json({ error: 'Sipariş bulunamadı.' });
+  if (order.business_id !== req.user.id) {
+    return res.status(403).json({ error: 'Bu sipariş size ait değil.' });
+  }
+  if (order.status !== 'bekliyor') {
+    return res.status(400).json({ error: 'Bir kurye tarafından alınmış siparişler iptal edilemez, kuryeyle iletişime geçin.' });
+  }
+
+  db.prepare(`UPDATE orders SET status = 'iptal', updated_at = datetime('now') WHERE id = ?`).run(orderId);
+
+  const updated = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+  res.json({ order: updated, message: 'Sipariş iptal edildi.' });
+});
+
+
 
 module.exports = router;

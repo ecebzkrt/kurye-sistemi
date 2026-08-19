@@ -3,7 +3,7 @@ const express =require('express');
 const bcrypt= require('bcryptjs');
 const jwt= require('jsonwebtoken');
 const db= require('../db');
-const { JWT_SECRET }=require('../middleware/auth');
+const { JWT_SECRET, requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
 //isletme kaydi
@@ -96,4 +96,60 @@ router.post('/courier/login',(req,res)=>{
         courier: {id: courier.id,name:courier.name,email:courier.email,mahalle:courier.mahalle,status:courier.status}
     });
 });
+// İŞLETME HESABINI SİL (aslında devre dışı bırakır, geçmiş siparişler bozulmasın diye)
+router.delete('/business/delete', requireAuth(['business']), (req, res) => {
+  const { password, confirm } = req.body;
+
+  if (confirm !== 'SIL') {
+    return res.status(400).json({ error: 'Onaylamak için "SIL" yazmalısınız.' });
+  }
+
+  const business = db.prepare('SELECT * FROM businesses WHERE id = ?').get(req.user.id);
+  if (!business || !bcrypt.compareSync(password, business.password_hash)) {
+    return res.status(401).json({ error: 'Şifre hatalı.' });
+  }
+
+  const activeOrder = db.prepare(
+    `SELECT id FROM orders WHERE business_id = ? AND status IN ('bekliyor','atandi','yolda')`
+  ).get(req.user.id);
+
+  if (activeOrder) {
+    return res.status(400).json({ error: 'Devam eden veya bekleyen siparişiniz var. Hesabınızı silmeden önce bunları tamamlayın veya iptal edin.' });
+  }
+
+  const deactivatedEmail = `${business.email}::deleted::${Date.now()}`;
+  db.prepare('UPDATE businesses SET email = ? WHERE id = ?').run(deactivatedEmail, req.user.id);
+
+  res.json({ message: 'Hesabınız silindi.' });
+});
+
+// KURYE HESABINI SİL (aynı mantık)
+router.delete('/courier/delete', requireAuth(['courier']), (req, res) => {
+  const { password, confirm } = req.body;
+
+  if (confirm !== 'SIL') {
+    return res.status(400).json({ error: 'Onaylamak için "SIL" yazmalısınız.' });
+  }
+
+  const courier = db.prepare('SELECT * FROM couriers WHERE id = ?').get(req.user.id);
+  if (!courier || !bcrypt.compareSync(password, courier.password_hash)) {
+    return res.status(401).json({ error: 'Şifre hatalı.' });
+  }
+
+  const activeOrder = db.prepare(
+    `SELECT id FROM orders WHERE courier_id = ? AND status IN ('atandi','yolda')`
+  ).get(req.user.id);
+
+  if (activeOrder) {
+    return res.status(400).json({ error: 'Üzerinizde teslim edilmemiş bir sipariş var. Hesabınızı silmeden önce teslim edin.' });
+  }
+
+  const deactivatedEmail = `${courier.email}::deleted::${Date.now()}`;
+  db.prepare('UPDATE couriers SET email = ? WHERE id = ?').run(deactivatedEmail, req.user.id);
+
+  res.json({ message: 'Hesabınız silindi.' });
+});
+
+
+
 module.exports= router;
